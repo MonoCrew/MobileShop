@@ -13,7 +13,7 @@ passport.use(
     },
     async (email, password, done) => {
       try {
-        const configuredEmail = (process.env.AUTH_EMAIL || "hamzanazir780@gmail.com").trim().toLowerCase();
+        const configuredEmail = (process.env.AUTH_EMAIL || "hammad@gmail.com").trim().toLowerCase();
         const configuredPassword = process.env.AUTH_PASSWORD || "12345678";
         const normalizedInputEmail = (email || "").trim().toLowerCase();
 

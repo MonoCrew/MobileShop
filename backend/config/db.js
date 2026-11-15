@@ -1,15 +1,20 @@
 const dns = require("dns");
-try {
-  dns.setServers(["8.8.8.8", "1.1.1.1"]);
-} catch (e) { }
+if (dns.setDefaultResultOrder) {
+  dns.setDefaultResultOrder("ipv4first");
+}
 const mongoose = require("mongoose");
 const bcrypt = require("bcryptjs");
 const User = require("../models/User");
 
+// Serverless connection cache across function invocations
+let cached = global.mongoose;
+if (!cached) {
+  cached = global.mongoose = { conn: null, promise: null };
+}
+
 /**
  * Ensures strictly a single admin user exists in the database.
- * If empty, creates hamzanazir780@gmail.com with password 12345678.
- * If another user exists (e.g. arshadtraders112233@gmail.com), migrates to hamzanazir780@gmail.com.
+ * If empty, creates hammad@gmail.com with password 12345678.
  * Deletes any duplicate or extraneous user entries.
  */
 const ensureSingleAdminUser = async () => {
@@ -70,60 +75,73 @@ const ensureSingleAdminUser = async () => {
 };
 
 /**
- * High-performance MongoDB Atlas connection with production connection pooling
- * and network latency optimizations.
+ * High-performance MongoDB Atlas connection with serverless connection pooling
+ * and failure-resilient retry logic.
  */
 const connectDB = async () => {
-  try {
-    const connUri = process.env.MONGODB_URI;
-    if (!connUri) {
-      throw new Error("MONGODB_URI environment variable is not defined");
-    }
+  const connUri = process.env.MONGODB_URI;
+  if (!connUri) {
+    throw new Error("MONGODB_URI environment variable is not defined");
+  }
 
-    // Reuse existing connection in serverless function invocations
-    if (mongoose.connection.readyState >= 1) {
-      return mongoose.connection;
-    }
+  // Reuse existing connection if active
+  if (cached.conn && mongoose.connection.readyState === 1) {
+    return cached.conn;
+  }
 
-    await mongoose.connect(connUri, {
-      maxPoolSize: 10,
-      minPoolSize: 0,
-      serverSelectionTimeoutMS: 10000,
-      socketTimeoutMS: 45000,
-    });
+  if (!cached.promise) {
+    cached.promise = mongoose
+      .connect(connUri, {
+        maxPoolSize: 10,
+        minPoolSize: 0,
+        serverSelectionTimeoutMS: 15000,
+        socketTimeoutMS: 45000,
+      })
+      .then(async (m) => {
+        console.log("MongoDB Connected");
 
-    console.log("MongoDB Connected");
+        // Automatically ensure single admin user with configured credentials
+        await ensureSingleAdminUser();
 
-    // Automatically ensure single admin user with configured credentials
-    await ensureSingleAdminUser();
-
-    // Reconcile and settle trade-in exchange invoices
-    try {
-      const { autoSettleTradeInInvoices } = require("../controllers/supplierController");
-      if (typeof autoSettleTradeInInvoices === "function") {
-        await autoSettleTradeInInvoices();
-      }
-    } catch (e) {
-      console.error("[DB] Error running reconciliations on connect:", e.message);
-    }
-
-    // Safely remove legacy unique barcode index on StockItem if it exists in MongoDB
-    try {
-      const stockItemCollection = mongoose.connection.collection("stockitems");
-      const indexes = await stockItemCollection.indexes();
-      for (const idx of indexes) {
-        if (idx.unique && idx.key && idx.key.barcode) {
-          await stockItemCollection.dropIndex(idx.name);
-          console.log(`[DB] Successfully dropped unique barcode index: ${idx.name}`);
+        // Reconcile and settle trade-in exchange invoices
+        try {
+          const { autoSettleTradeInInvoices } = require("../controllers/supplierController");
+          if (typeof autoSettleTradeInInvoices === "function") {
+            await autoSettleTradeInInvoices();
+          }
+        } catch (e) {
+          console.error("[DB] Error running reconciliations on connect:", e.message);
         }
-      }
-    } catch (e) {
-      // Index might already be non-unique or not exist
-    }
+
+        // Safely remove legacy unique barcode index on StockItem if it exists in MongoDB
+        try {
+          const stockItemCollection = mongoose.connection.collection("stockitems");
+          const indexes = await stockItemCollection.indexes();
+          for (const idx of indexes) {
+            if (idx.unique && idx.key && idx.key.barcode) {
+              await stockItemCollection.dropIndex(idx.name);
+              console.log(`[DB] Successfully dropped unique barcode index: ${idx.name}`);
+            }
+          }
+        } catch (e) {
+          // Index might already be non-unique or not exist
+        }
+
+        return m;
+      });
+  }
+
+  try {
+    cached.conn = await cached.promise;
   } catch (error) {
+    // Reset cache so subsequent invocations can retry
+    cached.promise = null;
+    cached.conn = null;
     console.error(`MongoDB Connection Error: ${error.message}`);
     throw error;
   }
+
+  return cached.conn;
 };
 
 module.exports = connectDB;

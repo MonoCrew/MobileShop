@@ -1,9 +1,7 @@
 require("dotenv").config();
 const dns = require("dns");
-try {
-  dns.setServers(["8.8.8.8", "1.1.1.1"]);
-} catch (e) {
-  // fallback if custom DNS servers fail
+if (dns.setDefaultResultOrder) {
+  dns.setDefaultResultOrder("ipv4first");
 }
 const path = require("path");
 const fs = require("fs");
@@ -12,6 +10,7 @@ const cors = require("cors");
 const compression = require("compression");
 const session = require("express-session");
 const { MongoStore } = require("connect-mongo");
+const mongoose = require("mongoose");
 const connectDB = require("./config/db");
 const passport = require("./config/passport");
 const { requireAuth } = require("./middleware/auth");
@@ -86,7 +85,25 @@ app.use("/api", (req, res, next) => {
   next();
 });
 
-// Express Session configured with MongoDB session store
+// Ensure database connection is ready before sessions or API requests execute
+app.use(async (req, res, next) => {
+  if (req.path.startsWith("/api")) {
+    try {
+      await connectDB();
+      return next();
+    } catch (error) {
+      console.error("[DB Middleware Error]", error.message);
+      return res.status(503).json({
+        success: false,
+        message: "Database connection failed. Please ensure MongoDB Atlas IP Whitelist allows 0.0.0.0/0.",
+        error: error.message,
+      });
+    }
+  }
+  next();
+});
+
+// Express Session configured with shared MongoDB session store
 app.use(
   session({
     name: "pos_sid",
@@ -94,16 +111,10 @@ app.use(
     resave: false,
     saveUninitialized: false,
     store: MongoStore.create({
-      mongoUrl: process.env.MONGODB_URI,
+      clientPromise: mongoose.connection.asPromise().then((conn) => conn.getClient()),
       collectionName: "sessions",
       ttl: 7 * 24 * 60 * 60, // 7 days in seconds
       autoRemove: "native",
-      mongoOptions: {
-        maxPoolSize: 10,
-        minPoolSize: 2,
-        serverSelectionTimeoutMS: 5000,
-        family: 4,
-      },
     }),
     cookie: {
       httpOnly: true,
@@ -116,19 +127,6 @@ app.use(
 
 // Initialize Passport and Session Deserialization
 app.use(passport.initialize());
-// Ensure database connection is established before handling API requests
-app.use("/api", async (req, res, next) => {
-  try {
-    await connectDB();
-    next();
-  } catch (error) {
-    return res.status(503).json({
-      success: false,
-      message: "Database connection failed. Please ensure MongoDB Atlas IP Whitelist allows 0.0.0.0/0.",
-      error: error.message,
-    });
-  }
-});
 app.use(passport.session());
 
 // Authentication Routes (Public: /login, /logout, /me)
