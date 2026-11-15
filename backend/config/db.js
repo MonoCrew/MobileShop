@@ -80,6 +80,11 @@ const connectDB = async () => {
       throw new Error("MONGODB_URI environment variable is not defined");
     }
 
+    // Reuse existing connection in serverless function invocations
+    if (mongoose.connection.readyState >= 1) {
+      return mongoose.connection;
+    }
+
     await mongoose.connect(connUri, {
       maxPoolSize: 25, // Optimal connection pool size for concurrent Atlas requests
       minPoolSize: 5,  // Keep 5 warm connections to avoid TLS/TCP handshake latency

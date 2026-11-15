@@ -31,7 +31,7 @@ const supplierRefundRoutes = require("./routes/supplierRefundRoutes");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
-const isProduction = process.env.NODE_ENV === "production";
+const isProduction = process.env.NODE_ENV === "production" || !!process.env.VERCEL;
 
 if (isProduction) {
   app.set("trust proxy", 1);
@@ -46,6 +46,7 @@ app.use(compression());
 // CORS configuration supporting both same-origin frontend and external dev clients
 const allowedOrigins = [
   process.env.CLIENT_URL,
+  process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : null,
   "http://localhost:3000",
   "http://127.0.0.1:3000",
   "http://localhost:5173",
@@ -221,6 +222,10 @@ app.use("/api", (req, res) => {
   res.status(404).json({ success: false, message: "API endpoint not found" });
 });
 
-app.listen(PORT, () => {
-  console.log(`POS Server running at http://localhost:${PORT}`);
-});
+if (require.main === module) {
+  app.listen(PORT, () => {
+    console.log(`POS Server running at http://localhost:${PORT}`);
+  });
+}
+
+module.exports = app;
