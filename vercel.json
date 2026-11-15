@@ -19,16 +19,9 @@
       }
     },
     {
-      "source": "/(assets/.*|.*\\.(?:ico|png|jpg|jpeg|svg|css|js|json|woff2?|ttf))",
-      "destination": {
-        "service": "frontend"
-      }
-    },
-    {
       "source": "/(.*)",
       "destination": {
-        "service": "frontend",
-        "path": "/index.html"
+        "service": "frontend"
       }
     }
   ]
