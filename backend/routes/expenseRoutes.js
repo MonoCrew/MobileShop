@@ -1,0 +1,14 @@
+const express = require("express");
+const router = express.Router();
+const {
+  createExpense,
+  getExpenses,
+  updateExpense,
+  deleteExpense,
+} = require("../controllers/expenseController");
+
+// Base: /api/expenses
+router.route("/").post(createExpense).get(getExpenses);
+router.route("/:id").put(updateExpense).delete(deleteExpense);
+
+module.exports = router;
