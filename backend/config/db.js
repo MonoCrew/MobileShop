@@ -14,8 +14,8 @@ const User = require("../models/User");
  */
 const ensureSingleAdminUser = async () => {
   try {
-    const configuredEmail = (process.env.AUTH_EMAIL).trim().toLowerCase();
-    const configuredPassword = process.env.AUTH_PASSWORD ;
+    const configuredEmail = (process.env.AUTH_EMAIL || "hammad@gmail.com").trim().toLowerCase();
+    const configuredPassword = process.env.AUTH_PASSWORD || "12345678";
     const hashedPassword = await bcrypt.hash(configuredPassword, 10);
 
     const userCount = await User.countDocuments();
@@ -86,11 +86,10 @@ const connectDB = async () => {
     }
 
     await mongoose.connect(connUri, {
-      maxPoolSize: 25, // Optimal connection pool size for concurrent Atlas requests
-      minPoolSize: 5,  // Keep 5 warm connections to avoid TLS/TCP handshake latency
-      serverSelectionTimeoutMS: 5000, // Fast failover (5s)
-      socketTimeoutMS: 45000, // Socket idle timeout
-      family: 4, // Force IPv4 to eliminate slow SRV DNS resolution on Windows
+      maxPoolSize: 10,
+      minPoolSize: 0,
+      serverSelectionTimeoutMS: 10000,
+      socketTimeoutMS: 45000,
     });
 
     console.log("MongoDB Connected");
@@ -123,6 +122,7 @@ const connectDB = async () => {
     }
   } catch (error) {
     console.error(`MongoDB Connection Error: ${error.message}`);
+    throw error;
   }
 };
 

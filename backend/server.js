@@ -38,7 +38,7 @@ if (isProduction) {
 }
 
 // Connect to MongoDB Atlas with connection pooling
-connectDB();
+connectDB().catch((err) => console.error("Initial connectDB error:", err.message));
 
 // High-speed response compression for JSON payloads and static assets
 app.use(compression());
@@ -116,6 +116,19 @@ app.use(
 
 // Initialize Passport and Session Deserialization
 app.use(passport.initialize());
+// Ensure database connection is established before handling API requests
+app.use("/api", async (req, res, next) => {
+  try {
+    await connectDB();
+    next();
+  } catch (error) {
+    return res.status(503).json({
+      success: false,
+      message: "Database connection failed. Please ensure MongoDB Atlas IP Whitelist allows 0.0.0.0/0.",
+      error: error.message,
+    });
+  }
+});
 app.use(passport.session());
 
 // Authentication Routes (Public: /login, /logout, /me)
